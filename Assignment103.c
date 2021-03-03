@@ -5,6 +5,7 @@
 #include <string.h>
 #include <stdint.h>
 #include <limits.h>
+#include <unistd.h>
 
 #define MAX_ROOMS 12
 #define MIN_ROOMS 6
@@ -77,6 +78,16 @@ struct player_node* next;
 
 }player_node;
 
+typedef struct player_node_heap {
+	player_node* head;
+	player_node* tail;
+	//int size;
+} player_node_heap;
+
+
+
+int populate_heap(player_node_heap* h);
+int push_player_node(player_node_heap* h, player_node* p);
 int kill_all();
 int initialize_pc();
 int initialize_players(int n);
@@ -462,7 +473,11 @@ int main(int argc, char* argv[])
 	initialize_pc();
 	initialize_players(6);
 
-	print_dungeon(xPCpos-1, yPCpos-1);
+	for (i = 0; i < 8; i++)
+	{
+		print_dungeon(xPCpos-1, yPCpos-1);
+		usleep(1000000);
+	}
 
 	kill_all();
 
@@ -1124,6 +1139,37 @@ int kill_all()
 				}
 			}
 		}
+	}
+
+}
+
+
+int populate_heap(player_node_heap* h)
+{
+	h = malloc(sizeof(player_node_heap));
+	for (int i = 0; i < ylenMax; i++)
+	{
+		for (int j = 0; j < xlenMax; j++)
+		{
+			if(grid_players[j][i]!=NULL) push_player_node(h, grid_players[j][i]);
+		}
+	}
+}
+
+int push_player_node(player_node_heap* h, player_node* p)
+{
+	if (h->head==NULL)//nothing in the heap
+	{
+		h->head = p;
+		h->tail = p;
+		return 0;
+	}
+	else
+	{
+		h->tail->next = p;
+		p->prev = h->tail;
+		h->tail = p;
+		return 0;
 	}
 
 }

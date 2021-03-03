@@ -98,20 +98,48 @@ int pop(player_node_heap* nh)
 	int min_turn = p->next_turn;
 	int min_when_initiated = p->when_initiated;
 	player_node* min_node = p
+	p = p->next;
 	while(p!=NULL)
 	{
-		if ()
+		if ((p->next_turn) < min_turn)
+		{
+			min_node = p;
+			min_when_initiated = p->when_initiated;
+			min_turn = p->next_turn;
+		}
+		else if((p->next_turn) == min_turn)
+		{
+			if ((p->when_initiated) < min_when_initiated)
+			{
+				min_node = p;
+				min_when_initiated = p->when_initiated;
+			}
+		}
 	}
+	//if p->ifpc then print dungeon
+	next_turn(p);
+
 }
-int screen_player_heap(){
+int screen_player_heap(player_node_heap* nh){
 	player_node* p = nh->head;
 	while(p!=NULL)
 	{
-		if (!(p->alive)) kill_player(p);
+		if (!(p->alive))
+		{
+			kill_player(p);
+			nh->size--;
+
+		}
 	}
 }
 int kill_player(player_node* p)
 {
+	//player_node* previous =
+	if ((p->prev)!=NULL)
+	p->prev->next = p->next;
+	if ((p->next)!=NULL)
+	p->next->prev = p->prev;
+
 	if (p->ifPC)
 	{
 		int tempx = p->pc->x;
@@ -137,39 +165,63 @@ int populate_heap()
 }
 
 
-int initialize_pc(){
-PC *pc = malloc(sizeof(PC));
-int i, j, k
-i= 1;
-while (i)
+int initialize_pc()
 {
-	j = rand()%ylenMax;
-	k = rand()%xlenMax;
+	PC *pc = malloc(sizeof(PC));
+	int i, j, k
+	i= 1;
+	while (i)
+	{
+		j = rand()%ylenMax;
+		k = rand()%xlenMax;
 
-	if (grid[j][k] == '.') i = 0;
+		if (grid[j][k] == '.') i = 0;
 
 
+	}
+	pc->y = j;
+	pc->x = k;
+
+	pcx,y = randomly where char[][]  == '.';
+
+
+	player_node* pn = malloc(sizeof(player_node));
+	pn->ifPC = 1;
+	pn->alive = 1;
+	pn->pc = pc;
+	pn->next_turn = 0;
+	pn->when_initiated = cunter++;
+	pn->speed = 10;
+	grid_players[k][j] = pn;
 }
-pc->y = j;
-pc->x = k;
 
-pcx,y = randomly where char[][]  == '.';
-
-
-
-player_node* pn = malloc(sizeof(player_node));
-pn->ifPC = 1;
-pn->alive = 1;
-pn->pc = pc;
-pn->next_turn = 0;
-pn->when_initiated = cunter++;
-pn->speed = 10;
-grid_players[k][j] = pn;
+int distant_from_pc(PC* p, int x, int y){
+	int PCx,PCy;
+	PCx = p->x;
+	PCy=p->y;
+	if ((x > (PCx+4))||(x < (PCx-4))) return 1;
+	if ((y > (PCy+4))||(y < (PCy-4))) return 1;
+	return 0;
 }
+
 
 int initialize_players(int n)
 {
 	int i, j, k , t;
+	//we're assuming PC initialisation happens before other grid_players
+	PC* p;
+	for (i = 0; i < ylenMax; i++)
+	{
+		for (j = 0; j < xlenMax; j++)
+		{
+			if (player_grid[j][i]!=NULL){
+				if (player_grid[j][i]->ifPC) p=player_grid[j][i]->pc;
+			}
+		}
+	}
+
+
+	//for () for() look for p
 
 	for (t = 0; t < n; t++)
 	{
@@ -184,7 +236,7 @@ int initialize_players(int n)
 			j = rand()%ylenMax;
 			k = rand()%xlenMax;
 
-			if (grid[j][k] == '.' && grid_players[j][k]==NULL) i = 0;
+			if (grid[j][k] == '.' && grid_players[j][k]==NULL && distant_from_pc(pc, j, k)) i = 0;
 
 
 		}
