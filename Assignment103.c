@@ -1,0 +1,1129 @@
+#include <stdio.h>
+#include <stdlib.h>
+#include <time.h>
+#include <endian.h>
+#include <string.h>
+#include <stdint.h>
+#include <limits.h>
+
+#define MAX_ROOMS 12
+#define MIN_ROOMS 6
+
+#define xlenMax 78
+#define ylenMax 19
+
+
+#define minRoomxlen 4
+#define minRoomylen 3
+
+#define maxStairs 3
+#define minStairs 1
+
+/*the room is a struct to save the relevant coordinates and leghts of a room*/
+typedef struct room
+{
+	int xloc;
+	int yloc;
+	int xlen;
+	int ylen;
+}room;
+/*node - this contains x and y coordinates and address of next and prev node;*/
+typedef struct node {
+	int xcoor;
+	int ycoor;
+	struct node* prev;
+	struct node* next;
+} node;
+/*node_heap - this contains the head node address (last node entered), the tail node address (first node entered) and the size of the node_heap*/
+typedef struct node_heap {
+	node* head;
+	node* tail;
+	int size;
+} node_heap;
+/*neighbourhood - this contains an 8x2 array that contains all possible neighour's coordinates (x,y) and the size - num of neighours*/
+
+
+typedef struct neighbourhood{
+int store[8][2];
+int size;
+}neighbourhood;
+
+typedef struct PC{
+int speed;
+int x;
+int y;
+}PC;
+
+typedef struct NPC{
+uint8_t character;
+int x;
+int y;
+int speed;
+int ifPCseen;
+int PCx;
+int PCy;
+}NPC;
+
+typedef struct player_node{
+int ifPC;
+PC* pc;
+NPC* npc;
+int next_turn;
+int when_initiated;
+int alive;
+struct player_node* prev;
+struct player_node* next;
+
+
+}player_node;
+
+int kill_all();
+int initialize_pc();
+int initialize_players(int n);
+/*These are all the prototypes that we'll use later*/
+int getNeighbour(int x, int y, neighbourhood* n);
+int push(node_heap* nh, int x, int y);
+int pop(node_heap* nh, int* x, int* y);
+int print_difficulty(int PCposx, int PCposy, int diff_print[xlenMax][ylenMax]);
+
+
+int makes_sense(room rooms[], int numRooms);
+int not_so_rand_roomsize_resizer(int numRooms);
+int print_dungeon(int x, int y);
+int djik (int xcoordinate, int ycoordinate, int ifdigger);
+int print_hardness();
+int print_neighbour_movement(int PCposx, int PCposy, int hardness[xlenMax][ylenMax]);
+
+uint8_t player_init_counter = 0;
+int distant_from_pc(PC* p, int x, int y);
+
+/*the five grids are being saved so all the methods will have access to them*/
+char grid[xlenMax][ylenMax];
+int hardness[xlenMax][ylenMax];
+int difficulty[xlenMax][ylenMax];//this will be used to save data for distance of non-tunnelers
+int difficulty_t[xlenMax][ylenMax];//this is to save data for tunnelers
+uint8_t shortPathRecord[xlenMax][ylenMax];//this keeps record of what is on the queue and what isn't for djik* algo
+
+player_node *grid_players[xlenMax][ylenMax];
+
+int main(int argc, char* argv[])
+{
+
+	int i, j, x, y, k; //we declare most of the common variables we'll be using late
+	//the grid below will be use to store all the characters for dungeon
+	//char grid[xlenMax][ylenMax];
+	//int hardness[xlenMax][ylenMax];
+	int numRooms, numUpstairs, numDownstairs;
+	uint8_t xPCpos, yPCpos;
+
+	room *rooms;
+
+	//first we populate the grid with spaces
+	for (i = 0; i < xlenMax; i++)
+	{
+		for (j = 0; j < ylenMax; j++)
+		{
+			grid[i][j] = ' ';
+		}
+	}
+
+	//load method goes ther
+	for (i = 1; i < argc; i++)
+	{
+			if (!(strcmp(argv[i], "--load")))
+			{
+				j = 1;
+				break;
+			}
+
+	}
+
+	if (j==1)
+	{
+		//printf("load found\n");
+
+		FILE *f;
+
+		char *home = getenv("HOME");
+		char *gamedir = ".rlg327";
+		char *savefile = "dungeon";
+		char *path = malloc(strlen(home) + strlen(gamedir) + strlen(savefile) + 2 + 1);
+		sprintf(path, "%s/%s/%s", home, gamedir, savefile);
+
+		if( !( f = fopen( path, "r"))) {printf("Failed to open file\n"); return 1;}
+		free(path);
+
+
+		uint8_t temp8;
+		uint16_t temp16;
+		uint32_t temp32;
+
+		char filetype[12];
+		fread(filetype, sizeof(char), 12, f);
+
+		//dealing with version
+		fread(&temp32, sizeof(temp32), 1, f);
+
+		//dealing with filesize - will need to adjust endian if to be used
+		fread(&temp32, sizeof(temp32), 1, f);
+
+		//dealing xPCpos and yPCpos
+		fread(&xPCpos, sizeof(uint8_t), 1, f);
+		fread(&yPCpos, sizeof(uint8_t), 1, f);
+
+		//now we populate the dungeon matrix
+		for (j = 0; j < xlenMax + 2; j++)
+		{
+			fread(&temp8, sizeof(uint8_t), 1, f);
+		}
+
+		for (i = 0; i < ylenMax; i++)
+		{
+
+			fread(&temp8, sizeof(uint8_t), 1, f);
+
+			for (j = 0; j < xlenMax; j++)
+			{
+				fread(&temp8, sizeof(uint8_t), 1, f);
+				hardness[j][i] = temp8;
+			}
+
+			fread(&temp8, sizeof(uint8_t), 1, f);
+
+		}
+
+		for (j = 0; j < xlenMax + 2; j++)
+		{
+			fread(&temp8, sizeof(uint8_t), 1, f);
+		}
+		//end of hardness reading
+
+		//number of Rooms are entered here
+		fread(&temp16, sizeof(uint16_t), 1, f);
+		numRooms = be16toh(temp16);
+
+		//next we fill in the matrix rooms
+		rooms = malloc(numRooms * sizeof(room));
+
+		//here we write the coordinates of the room
+		for (i = 0; i < numRooms; i++)
+		{
+			fread(&temp8, sizeof(uint8_t), 1, f);
+			rooms[i].xloc = temp8 - 1;
+
+			fread(&temp8, sizeof(uint8_t), 1, f);
+			rooms[i].yloc = temp8 - 1;
+
+			fread(&temp8, sizeof(uint8_t), 1, f);
+			rooms[i].xlen = temp8;
+
+			fread(&temp8, sizeof(uint8_t), 1, f);
+			rooms[i].ylen = temp8;
+
+		}
+
+		//next we populate the room area with the downstairs
+		for (x = 0; x < numRooms; x++)
+		{
+
+			for (i = rooms[x].xloc; i < (rooms[x].xloc + rooms[x].xlen); i++)
+			{
+				for (j = rooms[x].yloc; j < (rooms[x].yloc + rooms[x].ylen); j++)
+				{
+					grid[i][j] = '.';
+				}
+			}
+		}
+
+		//next we deal with upstairs
+		fread(&temp16, sizeof(uint16_t), 1, f);
+		numUpstairs = be16toh(temp16);
+
+
+		for (i = 0; i < numUpstairs; i++)
+		{
+
+			fread(&temp8, sizeof(uint8_t), 1, f);
+			x = temp8 - 1;
+
+			fread(&temp8, sizeof(uint8_t), 1, f);
+			y = temp8 - 1;
+			grid[x][y] = '<';
+
+		}
+
+		//next we deal with downstairs
+		fread(&temp16, sizeof(uint16_t), 1, f);
+		numDownstairs = be16toh(temp16);
+
+
+		for (i = 0; i < numDownstairs; i++)
+		{
+
+			fread(&temp8, sizeof(uint8_t), 1, f);
+			x = temp8 - 1;
+
+			fread(&temp8, sizeof(uint8_t), 1, f);
+			y = temp8 - 1;
+			grid[x][y] = '>';
+
+		}
+		//next we populate the corridors wherever hardness is zero and there is no room or stairs (or in this case wherever there is space in the grid)
+		for (i = 0; i < ylenMax; i++)
+		{
+			for (j = 0; j < xlenMax; j++)
+			{
+				if (hardness[j][i] == 0)
+				{
+					if (grid[j][i] == ' ') grid[j][i] = '#';
+				}
+			}
+		}
+
+		fclose(f);
+		//printf("load found - final - no error while loading\n");
+
+	}
+	//this is where we start processing the dungron if the load was not found
+	else
+	{
+
+		//we will start out by creating a seed with time-0 to access some randomeness
+		srand(time(0));
+
+		//populating the hardness randomly
+		for (i = 0; i < ylenMax; i++)
+		{
+			for (j = 0; j < xlenMax; j++)
+			{
+				hardness[j][i] = 1 + (rand() % 254);
+			}
+		}
+
+		numRooms = MIN_ROOMS + (rand() % (MAX_ROOMS - MIN_ROOMS + 1));
+
+		rooms = malloc(numRooms * sizeof(room));
+
+		int resizer = not_so_rand_roomsize_resizer(numRooms);//we use this function to obtain a denominator to limit the size of the rooms
+
+		//the if conditions used to obtain the max length of the room help avoid the floating point exception (core dump) later when we use it with modulus later
+		int maxRoomxlen = xlenMax / resizer;
+		if (maxRoomxlen <= minRoomxlen) maxRoomxlen = minRoomxlen + 1;
+
+
+		int maxRoomylen = ylenMax / resizer;
+		if (maxRoomylen <= minRoomylen) maxRoomylen = minRoomylen + 1;
+
+		//printf("num Rooms = %d\n", numRooms); //uncomment to see num of rooms generated
+
+		//this loop keeps going till random coordinates and lengths are obtained from random function that make sense
+		while (1)
+		{
+			for (i = 0; i < numRooms; i++)
+			{
+				rooms[i].xloc = rand() % xlenMax;
+				rooms[i].yloc = rand() % ylenMax;
+				rooms[i].xlen = minRoomxlen + rand() % ((maxRoomxlen) - minRoomxlen);
+				rooms[i].ylen = minRoomylen + rand() % ((maxRoomylen) - minRoomylen);
+			}
+			if (makes_sense(rooms, numRooms)) break;
+		}
+
+
+		//Next we populate the grid with '.' as per the randomised coordinates that made sense that we obtained earlier
+		for (x = 0; x < numRooms; x++)
+		{
+
+			for (i = rooms[x].xloc; i < (rooms[x].xloc + rooms[x].xlen); i++)
+			{
+				for (j = rooms[x].yloc; j < (rooms[x].yloc + rooms[x].ylen); j++)
+				{
+					grid[i][j] = '.';
+					hardness[i][j] = 0;
+				}
+			}
+		}
+
+		//next we carve out a path between adjacent rooms in which we use the former's x coordinate and latter's y-coordinates to create a mid-point
+		for (int x = 0; x < numRooms - 1; x++)
+		{
+			int middlex = rooms[x].xloc;
+			int middley = rooms[x + 1].yloc;
+			int i;//i will save the direction of the path
+
+			if (rooms[x].yloc > middley) i = 1;
+			else i = -1;
+
+			//first we go from from midpoint to former room
+			for ( j = middley; j != rooms[x].yloc; j += i)
+			{
+				if (grid[middlex][j] != '.')
+				{
+					grid[middlex][j] = '#';
+					hardness[middlex][j] = 0;
+				}
+			}
+
+			//then we go from midpoint to latter room
+			if (rooms[x + 1].xloc > middlex) i = 1;
+			else i = -1;
+
+			for ( j = middlex; j != rooms[x + 1].xloc; j += i)
+			{
+				if (grid[j][middley] != '.')
+				{
+					grid[j][middley] = '#';
+					hardness[j][middley] = 0;
+				}
+			}
+
+		}
+
+
+		//here we randomise the upwards and downward staircases and insert them wherever the random coordinates and its horizontal neighbours are part of room
+		for (i = 0; i < 2; i++)
+		{
+			//first iteration adds random number of '<' to the grid, second adds '<'
+			char staircase;
+			if (i == 0) staircase = '<';
+			else staircase = '>';
+
+			int numStairs = minStairs + rand() % ((maxStairs) - minStairs);
+			if (i == 0)
+			{
+				staircase = '<';
+				numUpstairs = numStairs;
+
+			}
+			else
+			{
+				staircase = '>';
+				numDownstairs = numStairs;
+			}
+
+			for (j = 0; j < numStairs; j++)
+			{
+				//while loops below keeps going till a successfuk coordinate is found
+				while (1)
+				{
+					x = 1 + (rand() % (xlenMax - 2));//this ensures that we're not on the left or the right edge because the condition below checks horizontal neighbours
+					y = (rand() % (ylenMax));
+
+					if (grid[x][y] == '.' && grid[x - 1][y] == '.' && grid[x + 1][y] == '.')
+					{
+						grid[x][y] = staircase;
+						break;
+					}
+				}
+
+
+			}
+		}
+
+
+		//this is where we try to position PC on the floor, making sure there's floor there
+		xPCpos = 0;
+		yPCpos = 0;
+		for (i = 0; i < ylenMax; i++)
+		{
+			k = 0;
+			for (j = 0; j < xlenMax; j++)
+			{
+				if (grid[j][i] == '.')
+				{
+					xPCpos = j+1;
+					yPCpos = i+1;
+					k=1;
+					break;
+				}
+
+			}
+			if (k) break;
+		}
+
+	}
+	//this is where processing of the dungeon ends
+
+	/*the method below will help produce the desired result for 1.03*/
+
+	printf("\nPC is at (y, x): %d, %d\n\n", yPCpos, xPCpos);
+	//below is where we print out the actual grid
+	print_dungeon(xPCpos-1, yPCpos-1);
+
+	//next we calculate shortest distance for non-tunnelers
+	for (i = 0; i < ylenMax; i++){
+		for(j = 0; j < xlenMax; j++) difficulty[j][i] = INT_MAX;
+	}
+	for (i = 0; i < ylenMax; i++){
+		for(j = 0; j < xlenMax; j++) difficulty_t[j][i] = INT_MAX;
+	}
+
+	printf("\n\n\n");
+	initialize_pc();
+	initialize_players(6);
+
+	print_dungeon(xPCpos-1, yPCpos-1);
+
+	kill_all();
+
+
+	//Now we check to see if there's a save switch to update the /.rlg327/dungeon
+	j = 0;
+	for (i = 1; i < argc; i++)
+	{
+			if (!(strcmp(argv[i], "--save")))
+			{
+				j = 1;
+				break;
+			}
+
+	}
+	//processing for save tags beings here
+	if (j)
+	{
+		//printf("save found\n");
+		FILE *f;
+
+		char *home = getenv("HOME");
+		char *gamedir = ".rlg327";
+		char *savefile = "dungeon";
+		char *path = malloc(strlen(home) + strlen(gamedir) + strlen(savefile) + 2 + 1);
+		sprintf(path, "%s/%s/%s", home, gamedir, savefile);
+
+		if( !( f = fopen( path, "w"))) {printf("Failed to open file\n"); return 1;}
+		free(path);
+
+		char* marker = "RLG327-S2021";
+		fwrite(marker, sizeof(char), 12, f);
+
+		uint32_t version = 0;
+		version = htobe32(version);
+		fwrite(&version, sizeof(uint32_t), 1, f);
+
+		//calculate the size of the file, meanwhile the size is taken to be zero
+		uint32_t size = 1708 + (4 * numRooms) + (2 * (numUpstairs + numDownstairs));
+		size = htobe32(size);
+		fwrite(&size, sizeof(uint32_t), 1, f);
+
+		//now we enter position of the PC
+		fwrite(&xPCpos, sizeof(uint8_t), 1, f);
+		fwrite(&yPCpos, sizeof(uint8_t), 1, f);
+
+
+		//next we write the dungeon matrix - we will have to artificially populate the file with max hardness on border
+		uint8_t temp8;
+
+		for (j = 0; j < xlenMax + 2; j++)
+		{
+			temp8 = 255;
+			fwrite(&temp8, sizeof(uint8_t), 1, f);
+		}
+
+		for (i = 0; i < ylenMax; i++)
+		{
+			temp8 = 255;
+			fwrite(&temp8, sizeof(uint8_t), 1, f);
+
+			for (j = 0; j < xlenMax; j++)
+			{
+				temp8 = hardness[j][i];
+				fwrite(&temp8, sizeof(uint8_t), 1, f);
+			}
+
+			temp8 = 255;
+			fwrite(&temp8, sizeof(uint8_t), 1, f);
+
+		}
+
+		for (j = 0; j < xlenMax + 2; j++)
+		{
+			temp8 = 255;
+			fwrite(&temp8, sizeof(uint8_t), 1, f);
+		}
+
+		//number of Rooms are entered here
+		uint16_t temp16 = numRooms;
+		temp16 = htobe16(temp16);
+
+		fwrite(&temp16, sizeof(uint16_t), 1, f);
+
+		//mext we write the coordinates of the room
+		for (i = 0; i < numRooms; i++)
+		{
+			temp8 = 1 + rooms[i].xloc;
+			fwrite(&temp8, sizeof(uint8_t), 1, f);
+
+			temp8 = 1 + rooms[i].yloc;
+			fwrite(&temp8, sizeof(uint8_t), 1, f);
+
+			temp8 = rooms[i].xlen;
+			fwrite(&temp8, sizeof(uint8_t), 1, f);
+
+			temp8 = rooms[i].ylen;
+			fwrite(&temp8, sizeof(uint8_t), 1, f);
+
+		}
+
+		//here we process the number of upstairs
+		temp16 = numUpstairs;
+		temp16 = htobe16(temp16);
+		fwrite(&temp16, sizeof(uint16_t), 1, f);
+
+		//here we enter the coordinates of upstairs
+		for (j = 0; j < ylenMax; j++)
+		{
+			for (k = 0; k < xlenMax; k++)
+			{
+				if (grid[k][j] == '<')
+				{
+					temp8 = k + 1;
+					fwrite(&temp8, sizeof(uint8_t), 1, f);
+
+
+					temp8 = j + 1;
+					fwrite(&temp8, sizeof(uint8_t), 1, f);
+
+				}
+			}
+		}
+
+		//here we process the number of downstairs
+		temp16 = numDownstairs;
+		temp16 = htobe16(temp16);
+		fwrite(&temp16, sizeof(uint16_t), 1, f);
+
+		//here we enter the coordinates of downstairs
+		for (j = 0; j < ylenMax; j++)
+		{
+			for (k = 0; k < xlenMax; k++)
+			{
+				if (grid[k][j] == '>')
+				{
+					temp8 = k + 1;
+					fwrite(&temp8, sizeof(uint8_t), 1, f);
+
+					temp8 = j + 1;
+					fwrite(&temp8, sizeof(uint8_t), 1, f);
+
+				}
+			}
+		}
+
+
+		fclose(f);
+	}
+	//processing for save ends here
+
+	free(rooms);
+	return 0;
+}
+/*The first is the makes_sense function that takes the array of rooms and number of Rooms as the argument.
+It tries to see if the top edge of one room coincides with area occupied with all the other rooms.
+This it does in four ways - first it check if the y coordinates of the top edge are inside
+the range+1(1 is added to keep a gap of 1) of the other rooms. If a room is coincides on
+ the y-coordinates, then we check the x-coordinates. This we do in three ways, by checking the left corner,
+ the right corner and the middle. If any of these indicate intersection then the program ends soonafter because
+ it 'doesnt make sense' so the random function will pick some other coordinates. This function also makes sure
+ the rooms are within the grid we have and don't exceed.*/
+int makes_sense(room rooms[], int numRooms)
+{
+
+	int checker = 1;//this essentially marks whether the program makes any sense, 0 indicates it doesnn't
+
+	for (int i = 0; i < numRooms; i++)
+	{
+		for (int j = 0; j < numRooms; j++)
+		{
+			if (i != j)
+			{
+				//first it check if the y coordinates of the top edge are inside the range+1(1 is added to keep a gap of 1) of the other rooms. If a room is coincides on the y-coordinates, then we check the x-coordinates
+				if(
+				rooms[i].yloc >= rooms[j].yloc &&
+				rooms[i].yloc <= (rooms[j].yloc + rooms[j].ylen + 1)
+				)
+				{
+					//If a room is coincides on the y-coordinates, then we check the x-coordinates by checking the left corner, the right corner and the middle.
+					if(
+					(rooms[i].xloc >= rooms[j].xloc &&//this checks left corner
+					rooms[i].xloc <= (rooms[j].xloc + rooms[j].xlen + 1)
+					) || (
+					rooms[i].xloc + rooms[i].xlen >= rooms[j].xloc &&//this checks right corner
+					rooms[i].xloc + rooms[i].xlen <= (rooms[j].xloc + rooms[j].xlen + 1)
+					) || (
+					rooms[i].xloc < rooms[j].xloc &&//this checks middle
+					rooms[i].xloc + rooms[i].xlen > (rooms[j].xloc + rooms[j].xlen + 1)
+					)
+					) checker = 0;
+				}
+
+
+			}
+
+			if (checker == 0) break;//this helps end the program soon if the coordinates don't make sense
+
+		}
+
+		if (//this condition just makes sure all the coordinates will map the rooms in the available grid
+			(rooms[i].xloc + rooms[i].xlen > xlenMax - 1) ||
+			(rooms[i].yloc + rooms[i].ylen > ylenMax - 1)
+			) checker = 0;
+
+		if (checker == 0) break;//this, along with the break above, ensures we swiftly end the program soon if the coordinates don't make sense
+	}
+
+	return checker;
+}
+
+/*The second function simply creates a number that we use as a denominator for calculating max_size of the rooms.
+The reason for this function was because the program took too long to find coordinates that made sense of number
+of rooms greater than 8. This restricts the random function a little bit more - hence the not_so_random part of the name.*/
+int not_so_rand_roomsize_resizer(int numRooms)
+{
+	int roomSizer = (numRooms/2) - 1;
+
+	return roomSizer;
+}
+/* The print_dungeon method below simply takes the x and y coordinates of the PC to make sure the @ is at the right position*/
+int print_dungeon(int x, int y)
+{
+	int i, j;
+	//for (i = 0; i < xlenMax; i++) {printf("-");}
+	//printf("\n");
+
+	for (i = 0; i < ylenMax; i++)
+	{
+		//printf("|");
+		for (j = 0; j < xlenMax; j++)
+		{
+
+			if (grid_players[j][i]==NULL) printf("%c", grid[j][i]);
+			else
+			{
+				if (grid_players[j][i]->ifPC) printf("@");
+				else
+				{
+					printf("%x",(grid_players[j][i]->npc->character));
+				}
+			}
+		}
+		printf("\n");
+	}
+
+	//for (i = 0; i < xlenMax; i++) {printf("-");}
+	//printf("\n\n\n");
+}
+
+
+/*This will be used to calculate the shortest distance for the monsters
+shortPathRecord keeps tab of what is inside the queue
+node_heap is used to keep all the coordinates in a priority queue
+the while loops keep doing till there's nothing left to process
+if the distance from current node is shorter than the one the neighbour cell has then it is checked if the neighbour is already on queue. If it isn't then its pushed on the priority queue
+The method takes the coordinates of PC as the argument and whether or not the distance that we're finding for is a digger or not*/
+int djik (int xcoordinate, int ycoordinate, int ifdigger)
+{
+	int i, j, k, x, y;
+
+	//first we initialise the set of shortPathRecord to zero so nothing is taken to be processed by djik algo
+	for (i = 0; i < ylenMax; i++){
+		for (j = 0; j < xlenMax; j++)
+		{
+			shortPathRecord[j][i] = 0;
+		}
+	}
+
+	node_heap newH;
+	newH.size = 0;
+	newH.tail = NULL;
+	newH.head = NULL;
+
+	push (&newH, xcoordinate, ycoordinate);
+	shortPathRecord [xcoordinate][ycoordinate] = 1;
+	difficulty[xcoordinate][ycoordinate] = 0;
+	difficulty_t[xcoordinate][ycoordinate] = 0;
+
+	while(newH.size > 0)
+	{
+		pop(&newH, &i, &j);
+		shortPathRecord [i][j] = 0;
+		neighbourhood currN;
+		getNeighbour(i, j, &currN);
+
+		int init_diff;
+		if (ifdigger)	init_diff	= difficulty_t[i][j];
+		else init_diff = difficulty[i][j];
+
+		int diff_curr_block;
+		if (grid[i][j]== ' ') diff_curr_block = 1 + (hardness[i][j]/85);
+		else diff_curr_block = 1;
+
+		for (k = 0; k < currN.size; k++)
+		{
+			x = currN.store[k][0];
+			y = currN.store[k][1];
+
+			if (!(ifdigger))
+			{
+				if (grid[x][y] != ' ')
+				{
+					//this is where we process the diggers
+
+					if (difficulty[x][y] > (init_diff + diff_curr_block))
+					{
+						difficulty[x][y] = init_diff + diff_curr_block;
+						//check to see if it is already on the processed stack
+						if (!shortPathRecord[x][y])
+						{
+							push(&newH, x, y);
+							shortPathRecord[x][y] = 1;
+						}
+					}
+			}
+			}
+			else
+			{
+				//this is where we process the diggers
+
+				if (difficulty_t[x][y] > (init_diff + diff_curr_block))
+				{
+					difficulty_t[x][y] = init_diff + diff_curr_block;
+					//check to see if it is already on the processed stack
+					if (!shortPathRecord[x][y])
+					{
+						push(&newH, x, y);
+						shortPathRecord[x][y] = 1;
+					}
+				}
+
+			}
+
+		}
+
+
+	}
+	return 0;
+}
+/*This looks up the coordinates of all the cells around the targeted one. The coordinates of the targeted cell and the neighbourgood that we need to populate*/
+int getNeighbour(int x, int y, neighbourhood* n){
+	int i,j;
+	int size = 0;
+	int store[8][2]; //= n->store;
+	//we start from the left and the move in the clockwise fashion
+	if (x > 0) {
+		store[size][0] = x - 1;
+		store[size][1] = y;
+		size++;
+	}
+	if ( (x > 0) && (y > 0) ){
+		store[size][0] = x - 1;
+		store[size][1] = y - 1;
+		size++;
+	}
+	if (y > 0) {
+		store[size][0] = x;
+		store[size][1] = y - 1;
+		size++;
+	}
+	if ( (x < (xlenMax - 1)) && (y > 0) ){
+		store[size][0] = x + 1;
+		store[size][1] = y - 1;
+		size++;
+	}
+	if (x < (xlenMax - 1)) {
+		store[size][0] = x + 1;
+		store[size][1] = y;
+		size++;
+	}
+	if ( (x < (xlenMax - 1)) && (y < (ylenMax - 1)) ){
+		store[size][0] = x + 1;
+		store[size][1] = y + 1;
+		size++;
+	}
+	if (y < (ylenMax - 1)) {
+		store[size][0] = x;
+		store[size][1] = y + 1;
+		size++;
+	}
+	if ( (x > 0) && (y < (ylenMax - 1)) ){
+		store[size][0] = x - 1;
+		store[size][1] = y + 1;
+		size++;
+	}
+
+//finally getting the copy in neighbourhood
+	for (i = 0; i < 2; i++)
+	{
+		for (j = 0; j < size; j++){
+			n->store[j][i] = store[j][i];
+		}
+	}
+	n->size = size;
+
+	return 0;
+}
+/*this method takes the coordinates of the cell and the heap that we're suppose to push them into. A new node will be created and pushed into being the head. If the size is zero, the head and tail will be the newNode. If it isnt, then its simply the head*/
+int push(node_heap* nh, int x, int y)
+{
+	node *newNode = malloc(sizeof(node));
+	newNode->xcoor = x;
+	newNode->ycoor = y;
+	newNode->next = NULL;
+
+	if (!(nh->size)){
+		newNode->prev = NULL;
+		nh->tail = newNode;
+		nh->head = newNode;
+		nh->size++;
+	}
+	else{
+		nh->head->next = newNode;
+		newNode->prev = (nh->head);
+		nh->head = newNode;
+		nh->size++;
+	}
+
+	return 0;
+
+}
+/*This is used to save the results of the node on the tail in the integer addresses provided and then free the node in the tail*/
+int pop(node_heap* nh, int* x, int* y)
+{
+	if (nh->size == 1)
+	{
+		*x = nh->tail->xcoor;
+		*y = nh->tail->ycoor;
+		free(nh->tail);
+	}
+	else
+	{
+		node* temp;
+		*x = nh->tail->xcoor;
+		*y = nh->tail->ycoor;
+		temp = nh->tail;
+		nh->tail = nh->tail->next;
+		nh->tail->prev = NULL;
+		free(temp);
+
+	}
+	nh->size -= 1;
+	return 0;
+
+}
+/*This prints the very last decimal unit for the cost of the shortest path i.e. diffifulty reaching PC. It takes as its argument the data of costs and the position of PC where we print '@'*/
+int print_difficulty(int PCposx, int PCposy, int diff_print[xlenMax][ylenMax])
+{
+	int i, j;
+
+	for (i = 0; i < ylenMax; i++)
+	{
+		for (j = 0; j < xlenMax; j++)
+		{
+			if ( (j==PCposx) && (i==PCposy) ) printf("@");
+			else
+			{
+				if (diff_print[j][i] == INT_MAX)
+				{
+					if (grid[j][i]==' ') printf(" ");
+					else printf("X");
+				}
+				else printf("%c", (char) ('0' + (diff_print[j][i]%10)));
+			}
+		}
+		printf("\n");
+	}
+	printf("\n\n");
+	return 0;
+}
+/*This prints the hardness of the dungeon in hexadecimal*/
+int print_hardness()
+{
+	int i,j;
+	printf("   ");
+	for (j = 0; j < xlenMax + 2; j++)
+	{
+			printf("%2d", j);
+	}
+	printf("\n 0 ");
+	for (j = 0; j < xlenMax + 2; j++)
+	{
+			printf("ff");
+	}
+	printf("\n");
+
+
+	for (i = 0; i < ylenMax; i++)
+	{
+		printf("%2d ff", (i+1));
+		for (j = 0; j < xlenMax; j++)
+		{
+			printf("%02x", hardness[j][i]);
+		}
+		printf("ff\n");
+	}
+
+	printf("20 ");
+	for (j = 0; j < xlenMax + 2; j++)
+	{
+			printf("ff");
+	}
+	printf("\n");
+
+	return 0;
+}
+int print_neighbour_movement(int PCposx, int PCposy, int hardness[xlenMax][ylenMax])
+{
+	int i,j;
+
+	for (j = 0; j < xlenMax + 2; j++)
+	{
+			printf("X");
+	}
+	printf("\n");
+
+	for (i = 0; i < ylenMax; i++)
+	{
+		printf("X");
+		for (j = 0; j < xlenMax; j++)
+		{
+			if ( (j==PCposx) && (i==PCposy) ) printf("@");
+			else
+			{
+				if (grid[j][i] != ' ') printf("1");
+				else printf("%d", ((hardness[j][i]/85)+1));
+			}
+		}
+		printf("X\n");
+	}
+
+	for (j = 0; j < xlenMax + 2; j++)
+	{
+			printf("X");
+	}
+	printf("\n");
+
+	return 0;
+}
+
+int distant_from_pc(PC* p, int x, int y){
+	int PCx,PCy;
+	PCx = p->x;
+	PCy=p->y;
+	if ((x > (PCx+4))||(x < (PCx-4))) return 1;
+	if ((y > (PCy+4))||(y < (PCy-4))) return 1;
+	return 0;
+}
+
+int initialize_pc()
+{
+	PC *pc = malloc(sizeof(PC));
+	int i, j, k;
+	i = 1;
+	while (i)
+	{
+		j = rand()%ylenMax;
+		k = rand()%xlenMax;
+
+		if (grid[k][j] == '.') i = 0;
+
+
+	}
+	pc->y = j;
+	pc->x = k;
+
+	pc->speed = 10;
+
+
+	player_node* pn = malloc(sizeof(player_node));
+	pn->ifPC = 1;
+	pn->alive = 1;
+	pn->pc = pc;
+	pn->next_turn = 0;
+	pn->when_initiated = player_init_counter++;
+	printf("\nx: %d y: %d\n", k,j);
+	grid_players[k][j] = pn;
+}
+
+int initialize_players(int n)
+{
+	int i, j, k , t;
+
+	//we're assuming PC initialisation happens before other grid_players
+	PC* p;
+	for (i = 0; i < ylenMax; i++)
+	{
+		for (j = 0; j < xlenMax; j++)
+		{
+			if (grid_players[j][i]!=NULL){
+				if (grid_players[j][i]->ifPC) p=grid_players[j][i]->pc;
+			}
+		}
+	}
+
+	for (t = 0; t < n; t++)
+	{
+
+		NPC *npc = malloc(sizeof(NPC));
+
+
+		i= 1;
+		while (i)
+		{
+			j = rand()%ylenMax;
+			k = rand()%xlenMax;
+
+			if (grid[k][j] == '.' && grid_players[j][k]==NULL && distant_from_pc(p, j, k)) i = 0;
+
+
+		}
+		npc->y = j;
+		npc->x = k;
+
+
+		npc->character = rand()&0xf;
+		npc->speed = 5+ (rand()&0xf);
+		npc-> ifPCseen = 0;
+
+
+		player_node* pn = malloc(sizeof(player_node));
+		pn->ifPC = 0;
+		pn->alive = 1;
+		pn->npc = npc;
+		pn->next_turn = 0;
+		pn->when_initiated = player_init_counter++;
+		printf("x: %d y: %d\n", k,j);
+		grid_players[k][j] = pn;
+
+	}
+
+
+}
+int kill_all()
+{
+	int i, j;
+	for (i = 0; i < ylenMax; i++)
+	{
+		for (j = 0; j < xlenMax; j++)
+		{
+			if (grid_players[j][i]!=NULL)
+			{
+				if (grid_players[j][i]->ifPC)
+				{
+					int tempx = (grid_players[j][i]->pc->x);
+					int tempy = (grid_players[j][i]->pc->y);
+					free(grid_players[j][i]->pc);
+					free(grid_players[j][i]);
+					grid_players[tempx][tempy] = NULL;
+				}
+				else
+				{
+					int tempx = grid_players[j][i]->npc->x;
+					int tempy = grid_players[j][i]->npc->y;
+					free(grid_players[j][i]->npc);
+					free(grid_players[j][i]);
+					grid_players[tempx][tempy] = NULL;
+				}
+			}
+		}
+	}
+
+}
