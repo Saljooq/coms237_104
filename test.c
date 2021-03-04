@@ -29,12 +29,12 @@ int speed;
 typedef struct player_node_heap {
 	player_node* head;
 	player_node* tail;
-	int size;
+	//int size;
 } node_heap;
 
 player_node *player_grid[][];
 
-int next_move(player_node *pn)
+int next_move(player_node *pn, PC* pc, int* ifend)
 {
 	if (pn->ifPC) return 0;
 	//now we've established that the node is not of PC
@@ -44,44 +44,133 @@ int next_move(player_node *pn)
 	neighbours* n;
 	n = malloc(sizeof(neighbours))
 	getneighbouts(n, x, y);
-	dijik(x,y);
+	//dijik(x,y);
 	int nextx;
 	int nexty;
-	if (character & 0xf)//assuming digger, tele, intel, non-erratic
+	int cost = INT_MAX;
+
+	if (character & TUN)
 	{
+		djik(pc->x, pc->y, 1);
+
 		for (int i = 0; i < n->size; i++)
 		{
-			if (digger_struct_low_cost[n->data[i][0]][n->data[i][1]]< least)
+			if (difficulty_t[n->store[i][0]][n->store[i][1]] < cost)
 			{
-				least = digger_struct_low_cost[n->data[i][0]][n->data[i][1]];
-				nextx = ;
-				nexty = ;
+				nextx = n->store[i][0];
+				nexty = n->store[i][1];
+				cost = difficulty_t[n->store[i][0]][n->store[i][1]];
+			}
+		}
+
+
+	}else
+	{
+		djik(pc->x, pc->y, 0);
+
+		for (int i = 0; i < n->size; i++)
+		{
+			if (difficulty_t[n->store[i][0]][n->store[i][1]] < cost)
+			{
+				nextx = n->store[i][0];
+				nexty = n->store[i][1];
+				cost = difficulty[n->store[i][0]][n->store[i][1]];
 			}
 		}
 	}
-
-
-
-	if erratic()
+	if (character & ERAT)
 	{
 		if (rand()& 0x1)
 		{
 			int selector = rand() % (n->size);
-			nextx = ;
-			nexty = ;
+			nextx = n->store[selector][0];
+			nexty = n->store[selector][0];
 		}
 	}
 
+	if(grid_players[nextx][nexty]==NULL)
+	{
+		if(character & TUN)
+		{
+			if(grid[nextx][nexty]==' ' && hardness[nextx][nexty] > 85 )
+			{
+				hardness[nextx][nexty] -= 85;
+			}
+			else
+			{
+				player_node* temp = grid_players[x][y];
+				grid_players[x][y] = NULL;
+				temp->npc->x = nextx;
+				temp->npc->y = nexty;
+				grid_players[nextx][nexty] = temp;
 
-		digger_struct_low_cost[pn->x][pn->y];
-
-
+			}
+		}
+		else
+		{
+			if(grid[nextx][nexty]!=' ')
+			{
+				player_node* temp = grid_players[x][y];
+				grid_players[x][y] = NULL;
+				temp->npc->x = nextx;
+				temp->npc->y = nexty;
+				grid_players[nextx][nexty] = temp;
+			}
+		}
+	}
+	else
+	{
+		if (grid[nextx][nexty]->ifPC) *ifend = 2;
+		kill_player(grid[nextx][nexty]);
+		player_node* temp = grid_players[x][y];
+		grid_players[x][y] = NULL;
+		temp->npc->x = nextx;
+		temp->npc->y = nexty;
+		grid_players[nextx][nexty] = temp;
 	}
 
-
-
+	pn->next_turn += (1000/(pn->speed));
 	free (n);
+	return 0;
 }
+
+
+
+// 	if (character & 0xf)//assuming digger, tele, intel, non-erratic
+// 	{
+// 		for (int i = 0; i < n->size; i++)
+// 		{
+// 			if (digger_struct_low_cost[n->data[i][0]][n->data[i][1]]< least)
+// 			{
+// 				least = digger_struct_low_cost[n->data[i][0]][n->data[i][1]];
+// 				nextx = ;
+// 				nexty = ;
+// 			}
+// 		}
+// 	}
+//
+//
+//
+// 	if erratic()
+// 	{
+// 		if (rand()& 0x1)
+// 		{
+// 			int selector = rand() % (n->size);
+// 			nextx = ;
+// 			nexty = ;
+// 		}
+// 	}
+//
+//
+// 		digger_struct_low_cost[pn->x][pn->y];
+//
+//
+// 	}
+//
+//
+//
+// 	free (n);
+// }
 
 int if_in_room()
 {
@@ -92,9 +181,19 @@ int push(node_player_heap* nh, int x, int y)
 {
 
 }
-int pop(player_node_heap* nh)
+int pop(player_node_heap* nh, int* ifend)
 {
 	player_node* p = nh->head;
+	if(p==NULL)
+	{
+		*ifend = 1;
+		return 0;
+	}
+	if(p->next==NULL)
+	{
+		*ifend = 3;
+		return 0;
+	}
 	int min_turn = p->next_turn;
 	int min_when_initiated = p->when_initiated;
 	player_node* min_node = p
@@ -115,9 +214,10 @@ int pop(player_node_heap* nh)
 				min_when_initiated = p->when_initiated;
 			}
 		}
+		p = p->next;
 	}
 	//if p->ifpc then print dungeon
-	next_turn(p);
+	next_turn(min_node);
 
 }
 int screen_player_heap(player_node_heap* nh){
@@ -127,7 +227,7 @@ int screen_player_heap(player_node_heap* nh){
 		if (!(p->alive))
 		{
 			kill_player(p);
-			nh->size--;
+			//nh->size--;
 
 		}
 	}
@@ -159,10 +259,37 @@ int kill_player(player_node* p)
 }
 
 
-int populate_heap()
+int populate_heap(player_node_heap* h)
 {
+	h = malloc(sizeof(player_node_heap));
+	for (int i = 0; i < ylenMax; i++)
+	{
+		for (int j = 0; j < xlenMax; j++)
+		{
+			if(grid_players[j][i]!=NULL) push_player_node(h, grid_players[j][i]);
+		}
+	}
+}
+
+int push_player_node(player_node_heap* h, player_node* p)
+{
+	if (h->head==NULL)//nothing in the heap
+	{
+		h->head = n;
+		h->tail = n;
+		return 0;
+	}
+	else
+	{
+		h->tail->next = n;
+		n->prev = h->tail;
+		h->tail = n;
+		return 0;
+	}
 
 }
+
+
 
 
 int initialize_pc()

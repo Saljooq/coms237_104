@@ -1,5 +1,5 @@
-Assignment103: Assignment103.c
-	gcc Assignment103.c -o Assignment103
+Assignment104: Assignment104.c
+	gcc Assignment104.c -o Assignment104
 
 clean: 
-	rm -f Assignment103
+	rm -f Assignment104

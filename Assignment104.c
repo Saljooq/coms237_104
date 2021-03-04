@@ -20,6 +20,11 @@
 #define maxStairs 3
 #define minStairs 1
 
+#define BIT_SMART 0x1
+#define TELE 0x2
+#define TUN 0x4
+#define ERAT 0x8
+
 /*the room is a struct to save the relevant coordinates and leghts of a room*/
 typedef struct room
 {
@@ -86,11 +91,11 @@ typedef struct player_node_heap {
 
 
 
-int populate_heap(player_node_heap* h);
+int populate_heap(player_node_heap** h);
 int push_player_node(player_node_heap* h, player_node* p);
 int kill_all();
-int initialize_pc();
-int initialize_players(int n);
+int initialize_pc(PC** p);
+int initialize_players(int n, PC* p);
 /*These are all the prototypes that we'll use later*/
 int getNeighbour(int x, int y, neighbourhood* n);
 int push(node_heap* nh, int x, int y);
@@ -104,6 +109,9 @@ int print_dungeon(int x, int y);
 int djik (int xcoordinate, int ycoordinate, int ifdigger);
 int print_hardness();
 int print_neighbour_movement(int PCposx, int PCposy, int hardness[xlenMax][ylenMax]);
+
+int next_move(player_node *pn, PC* pc, int* ifend, player_node_heap* h);
+int pop_player(player_node_heap* nh, int* ifend, player_node** p);
 
 uint8_t player_init_counter = 0;
 int distant_from_pc(PC* p, int x, int y);
@@ -457,29 +465,55 @@ int main(int argc, char* argv[])
 
 	/*the method below will help produce the desired result for 1.03*/
 
-	printf("\nPC is at (y, x): %d, %d\n\n", yPCpos, xPCpos);
+	//printf("\nPC is at (y, x): %d, %d\n\n", yPCpos, xPCpos);
 	//below is where we print out the actual grid
 	print_dungeon(xPCpos-1, yPCpos-1);
 
-	//next we calculate shortest distance for non-tunnelers
-	for (i = 0; i < ylenMax; i++){
-		for(j = 0; j < xlenMax; j++) difficulty[j][i] = INT_MAX;
-	}
-	for (i = 0; i < ylenMax; i++){
-		for(j = 0; j < xlenMax; j++) difficulty_t[j][i] = INT_MAX;
-	}
+
 
 	printf("\n\n\n");
-	initialize_pc();
-	initialize_players(6);
+	PC* pc;
+	initialize_pc(&pc);
+	printf("\nPC has been initialised; the coordinates accessible from main are %d, %d\n", pc->x, pc->y);
+	initialize_players(6, pc);
+	player_node_heap* h;
+	populate_heap(&h);
 
-	for (i = 0; i < 8; i++)
+	// printf("\nLets see if the new djik works\n");
+	// djik(pc->x,pc->y,0);
+	// printf("\n\n");
+	// for (i = 0; i<ylenMax;i++) {for(j = 0; j<xlenMax; j++){ if (difficulty[j][i]==INT_MAX) printf("  "); else printf("%2d", difficulty[j][i]);} printf("\n");}
+	// printf("\n\n");
+
+	i = 0;
+	player_node* curr;
+	while (!(i))
 	{
-		print_dungeon(xPCpos-1, yPCpos-1);
-		usleep(1000000);
+		//print_dungeon(0, 0);
+		//usleep(1000000);
+		pop_player(h, &i, &curr);
+		if (!(i))
+		{
+			next_move(curr, pc ,&i, h);
+			player_node* curr2= h->head;
+
+			while(curr2!=NULL)
+			{
+				printf("%d-%d->",curr2->next_turn, curr2->ifPC);
+				curr2 = curr2->next;
+			}
+			printf("\n");
+		}
+
 	}
+	if (i==2)printf("\n\n\n\n\n\n\n\n\n\n\n\nPC LOST\n\n\n\n");
+	else if (i==3)printf("\n\n\n\n\n\n\n\n\n\n\n\nPC WON\n\n\n\n");
+
+	printf("\nLets see if the heap actually works\n head-->");
+
 
 	kill_all();
+	free(h);
 
 
 	//Now we check to see if there's a save switch to update the /.rlg327/dungeon
@@ -714,7 +748,7 @@ int print_dungeon(int x, int y)
 			if (grid_players[j][i]==NULL) printf("%c", grid[j][i]);
 			else
 			{
-				if (grid_players[j][i]->ifPC) printf("@");
+				if (grid_players[j][i]->ifPC==1) printf("@");
 				else
 				{
 					printf("%x",(grid_players[j][i]->npc->character));
@@ -739,6 +773,22 @@ int djik (int xcoordinate, int ycoordinate, int ifdigger)
 {
 	int i, j, k, x, y;
 
+
+	//next we calculate shortest distance for non-tunnelers
+	if(!(ifdigger))
+	{
+		for (i = 0; i < ylenMax; i++){
+			for(j = 0; j < xlenMax; j++) difficulty[j][i] = INT_MAX;
+		}
+	}
+	else
+		{
+		for (i = 0; i < ylenMax; i++){
+			for(j = 0; j < xlenMax; j++) difficulty_t[j][i] = INT_MAX;
+		}
+	}
+
+
 	//first we initialise the set of shortPathRecord to zero so nothing is taken to be processed by djik algo
 	for (i = 0; i < ylenMax; i++){
 		for (j = 0; j < xlenMax; j++)
@@ -747,19 +797,20 @@ int djik (int xcoordinate, int ycoordinate, int ifdigger)
 		}
 	}
 
-	node_heap newH;
-	newH.size = 0;
-	newH.tail = NULL;
-	newH.head = NULL;
+	node_heap* newH;
+	newH = malloc(sizeof(node_heap));
+	newH->size = 0;
+	newH->tail = NULL;
+	newH->head = NULL;
 
-	push (&newH, xcoordinate, ycoordinate);
+	push (newH, xcoordinate, ycoordinate);
 	shortPathRecord [xcoordinate][ycoordinate] = 1;
 	difficulty[xcoordinate][ycoordinate] = 0;
 	difficulty_t[xcoordinate][ycoordinate] = 0;
 
-	while(newH.size > 0)
+	while(newH->size > 0)
 	{
-		pop(&newH, &i, &j);
+		pop(newH, &i, &j);
 		shortPathRecord [i][j] = 0;
 		neighbourhood currN;
 		getNeighbour(i, j, &currN);
@@ -789,7 +840,7 @@ int djik (int xcoordinate, int ycoordinate, int ifdigger)
 						//check to see if it is already on the processed stack
 						if (!shortPathRecord[x][y])
 						{
-							push(&newH, x, y);
+							push(newH, x, y);
 							shortPathRecord[x][y] = 1;
 						}
 					}
@@ -805,7 +856,7 @@ int djik (int xcoordinate, int ycoordinate, int ifdigger)
 					//check to see if it is already on the processed stack
 					if (!shortPathRecord[x][y])
 					{
-						push(&newH, x, y);
+						push(newH, x, y);
 						shortPathRecord[x][y] = 1;
 					}
 				}
@@ -816,6 +867,7 @@ int djik (int xcoordinate, int ycoordinate, int ifdigger)
 
 
 	}
+	free(newH);
 	return 0;
 }
 /*This looks up the coordinates of all the cells around the targeted one. The coordinates of the targeted cell and the neighbourgood that we need to populate*/
@@ -1021,78 +1073,90 @@ int print_neighbour_movement(int PCposx, int PCposy, int hardness[xlenMax][ylenM
 
 int distant_from_pc(PC* p, int x, int y){
 	int PCx,PCy;
+	//printf("we're in distant method");
 	PCx = p->x;
 	PCy=p->y;
+	//printf("PC is at (%d,%d)", PCx,PCy);
 	if ((x > (PCx+4))||(x < (PCx-4))) return 1;
 	if ((y > (PCy+4))||(y < (PCy-4))) return 1;
 	return 0;
 }
 
-int initialize_pc()
+int initialize_pc(PC** pc)
 {
-	PC *pc = malloc(sizeof(PC));
+	(*pc) = malloc(sizeof(PC));
 	int i, j, k;
 	i = 1;
 	while (i)
 	{
-		j = rand()%ylenMax;
 		k = rand()%xlenMax;
+		j = rand()%ylenMax;
 
 		if (grid[k][j] == '.') i = 0;
 
 
 	}
-	pc->y = j;
-	pc->x = k;
 
-	pc->speed = 10;
+	(*pc)->x = k;
+	(*pc)->y = j;
+
+	(*pc)->speed = 10;
 
 
 	player_node* pn = malloc(sizeof(player_node));
 	pn->ifPC = 1;
 	pn->alive = 1;
-	pn->pc = pc;
+	pn->pc = (*pc);
 	pn->next_turn = 0;
 	pn->when_initiated = player_init_counter++;
 	printf("\nx: %d y: %d\n", k,j);
 	grid_players[k][j] = pn;
 }
 
-int initialize_players(int n)
+int initialize_players(int n, PC* p)
 {
 	int i, j, k , t;
 
 	//we're assuming PC initialisation happens before other grid_players
-	PC* p;
-	for (i = 0; i < ylenMax; i++)
-	{
-		for (j = 0; j < xlenMax; j++)
-		{
-			if (grid_players[j][i]!=NULL){
-				if (grid_players[j][i]->ifPC) p=grid_players[j][i]->pc;
-			}
-		}
-	}
+	// PC* p;
+	// for (i = 0; i < ylenMax; i++)
+	// {
+	// 	for (j = 0; j < xlenMax; j++)
+	// 	{
+	// 		if (grid_players[j][i]!=NULL){
+	// 			if (grid_players[j][i]->ifPC) p=grid_players[j][i]->pc;
+	// 		}
+	// 	}
+	// }
 
 	for (t = 0; t < n; t++)
 	{
 
 		NPC *npc = malloc(sizeof(NPC));
 
+		//printf("good so far\n");
 
 		i= 1;
 		while (i)
 		{
-			j = rand()%ylenMax;
-			k = rand()%xlenMax;
 
-			if (grid[k][j] == '.' && grid_players[j][k]==NULL && distant_from_pc(p, j, k)) i = 0;
+			k = rand()%xlenMax;
+			j = rand()%ylenMax;
+
+			//printf("---random find:: x is %d and y is %d\n", k,j);
+
+			if (grid[k][j] == '.' && grid_players[k][j]==NULL && distant_from_pc(p, k, j)) i = 0;
 
 
 		}
-		npc->y = j;
-		npc->x = k;
 
+		//printf("here! after initialisation");
+
+		npc->x = k;
+		npc->y = j;
+
+
+		//printf("x is %d and y is %d\n", k,j);
 
 		npc->character = rand()&0xf;
 		npc->speed = 5+ (rand()&0xf);
@@ -1144,14 +1208,14 @@ int kill_all()
 }
 
 
-int populate_heap(player_node_heap* h)
+int populate_heap(player_node_heap** h)
 {
-	h = malloc(sizeof(player_node_heap));
+	(*h) = malloc(sizeof(player_node_heap));
 	for (int i = 0; i < ylenMax; i++)
 	{
 		for (int j = 0; j < xlenMax; j++)
 		{
-			if(grid_players[j][i]!=NULL) push_player_node(h, grid_players[j][i]);
+			if(grid_players[j][i]!=NULL) push_player_node((*h), grid_players[j][i]);
 		}
 	}
 }
@@ -1170,6 +1234,255 @@ int push_player_node(player_node_heap* h, player_node* p)
 		p->prev = h->tail;
 		h->tail = p;
 		return 0;
+	}
+
+}
+
+
+
+
+int pop_player(player_node_heap* nh, int* ifend, player_node** output)
+{
+	player_node* p = nh->head;
+	if(p==NULL)
+	{
+		*ifend = 1;
+		return 0;
+	}
+	if(p->next==NULL)
+	{
+		*ifend = 3;
+		return 0;
+	}
+	int min_turn = p->next_turn;
+	int min_when_initiated = p->when_initiated;
+	player_node* min_node = p;
+	p = p->next;
+	while(p!=NULL)
+	{
+		if ((p->next_turn) < min_turn)
+		{
+			min_node = p;
+			min_when_initiated = p->when_initiated;
+			min_turn = p->next_turn;
+		}
+		else if((p->next_turn) == min_turn)
+		{
+			if ((p->when_initiated) < min_when_initiated)
+			{
+				min_node = p;
+				min_when_initiated = p->when_initiated;
+			}
+		}
+		p = p->next;
+	}
+	//if p->ifpc then print dungeon
+	//next_move(min_node, ifend);
+	*output = min_node;
+	return 0;
+
+}
+
+
+
+int kill_player(player_node* p, player_node_heap* h)
+{
+	//player_node* previous =
+	if ((p->prev)!=NULL)
+	{
+		p->prev->next = p->next;
+	}
+	else //this is a head
+	{
+		h->head = p->next;
+	}
+	if ((p->next)!=NULL)
+	{
+		p->next->prev = p->prev;
+	}
+	else //this is tail
+	{
+		h->tail = p->prev;
+	}
+
+	if (p->ifPC==1)
+	{
+		int tempx = p->pc->x;
+		int tempy = p->pc->y;
+		free(p->pc);
+		free(p);
+		grid_players[tempx][tempy] = NULL;
+	}
+	else
+	{
+		int tempx = p->npc->x;
+		int tempy = p->npc->y;
+		free(p->npc);
+		free(p);
+		grid_players[tempx][tempy] = NULL;
+	}
+}
+
+
+int next_move(player_node *pn, PC* pc, int* ifend, player_node_heap* h)
+{
+
+
+	if (pn->ifPC==1) {
+		printf("\nPC's turn, score of %d \n", pn->next_turn);
+
+		neighbourhood* n;
+		n = malloc(sizeof(neighbourhood));
+		getNeighbour(pn->pc->x, pn->pc->y, n);
+		for (int i = 0; i < n->size; i++)
+		{
+			if(grid_players[n->store[i][0]][n->store[i][1]]!=NULL)
+			{
+				kill_player(grid_players[n->store[i][0]][n->store[i][1]], h);
+				//player_node* temp = pn;
+				grid_players[pn->pc->x][pn->pc->y] = NULL;
+				pn->pc->x = n->store[i][0];
+				pn->pc->y = n->store[i][1];
+				grid_players[n->store[i][0]][n->store[i][1]] = pn;
+			}
+		}
+
+
+		pn->next_turn = pn->next_turn + (1000/(pn->pc->speed));
+		usleep(250000);
+		print_dungeon(0,0);
+		free(n);
+		printf("\n\n");
+		return 0;
+
+	}
+
+	printf("\nNPC with a score of %d at x,y: %d,%d named %x, being moved to  ",pn->next_turn, pn->npc->x,pn->npc->y,pn->npc->character);
+	//now we've established that the node is not of PC
+	int character = pn->npc->character;
+	int x = pn->npc->x;
+	int y = pn->npc->y;
+	neighbourhood* n;
+	n = malloc(sizeof(neighbourhood));
+	getNeighbour(x, y, n);
+	//dijik(x,y);
+	int nextx=x;
+	int nexty=y;
+	int cost = INT_MAX;
+
+	if (character & TUN)
+	{
+		djik(pc->x, pc->y, 1);
+
+		for (int i = 0; i < n->size; i++)
+		{
+			if (difficulty_t[n->store[i][0]][n->store[i][1]] < cost)
+			{
+				nextx = n->store[i][0];
+				nexty = n->store[i][1];
+				cost = difficulty_t[n->store[i][0]][n->store[i][1]];
+			}
+		}
+
+
+	}else
+	{
+		djik(pc->x, pc->y, 0);
+
+		for (int i = 0; i < n->size; i++)
+		{
+			if (difficulty_t[n->store[i][0]][n->store[i][1]] < cost)
+			{
+				nextx = n->store[i][0];
+				nexty = n->store[i][1];
+				cost = difficulty[n->store[i][0]][n->store[i][1]];
+			}
+		}
+	}
+	if (character & ERAT)
+	{
+		if (rand()& 0x1)
+		{
+			//printf(" --sorry randomiser activated--  ");
+			int selector = rand() % (n->size);
+			nextx = n->store[selector][0];
+			nexty = n->store[selector][1];
+		}
+	}
+
+	printf("%d, %d\n",nextx, nexty);
+
+	if(grid_players[nextx][nexty]==NULL)
+	{
+		if(character & TUN)
+		{
+			if(grid[nextx][nexty]==' ' && hardness[nextx][nexty] > 85 )
+			{
+				hardness[nextx][nexty] -= 85;
+			}
+			else
+			{
+				hardness[nextx][nexty] = 0;
+				if(grid[nextx][nexty]==' ') grid[nextx][nexty] = '#';
+				//player_node* temp = grid_players[x][y];
+				grid_players[x][y] = NULL;
+				pn->npc->x = nextx;
+				pn->npc->y = nexty;
+				grid_players[nextx][nexty] = pn;
+
+			}
+		}
+		else
+		{
+			if(grid[nextx][nexty]!=' ')
+			{
+				//player_node* temp = grid_players[x][y];
+				grid_players[x][y] = NULL;
+				pn->npc->x = nextx;
+				pn->npc->y = nexty;
+				grid_players[nextx][nexty] = pn;
+			}
+		}
+	}
+	else
+	{
+		if (grid_players[nextx][nexty]->ifPC==1) *ifend = 2;
+		kill_player(grid_players[nextx][nexty], h);
+		//player_node* temp = grid_players[x][y];
+		grid_players[x][y] = NULL;
+		pn->npc->x = nextx;
+		pn->npc->y = nexty;
+		grid_players[nextx][nexty] = pn;
+	}
+
+	pn->next_turn += (1000/(pn->npc->speed));
+	free (n);
+	return 0;
+}
+
+int if_in_room(PC* pc)
+{
+	int upper = pc->y;
+	while(upper+1 < ylenMax && grid[pc->x][upper+1]!=' ') upper++;
+	int lower = pc->y;
+	while(lower > 0 && grid[pc->x][lower-1]!=' ') lower--;
+	int right = pc->x;
+	while(right+1 < xlenMax && grid[right+1][pc->y]!=' ') right++;
+	int left = pc->x;
+	while(left > 0 && grid[left-1][pc->y]!=' ') left--;
+
+	for(int i = lower; i <= upper; i++)
+	{
+		for(int j = left; j <= right; j++)
+		{
+			if (grid_players[j][i]!=NULL){
+				if(!(grid_players[j][i]->ifPC==1)){
+					grid_players[j][i]->npc->ifPCseen = 1;
+					grid_players[j][i]->npc->PCx = pc->x;
+					grid_players[j][i]->npc->PCy = pc->y;
+				}
+			}
+		}
 	}
 
 }
