@@ -94,7 +94,7 @@ typedef struct player_node_heap {
 int populate_heap(player_node_heap** h);
 int push_player_node(player_node_heap* h, player_node* p);
 int kill_all();
-int initialize_pc(PC** p);
+int initialize_pc(PC* p);
 int initialize_players(int n, PC* p);
 /*These are all the prototypes that we'll use later*/
 int getNeighbour(int x, int y, neighbourhood* n);
@@ -114,8 +114,9 @@ int next_move(player_node *pn, PC* pc, int* ifend, player_node_heap* h);
 int pop_player(player_node_heap* nh, int* ifend, player_node** p);
 int if_in_room(PC* pc);
 
-uint8_t player_init_counter = 0;
-int distant_from_pc(PC* p, int x, int y);
+uint8_t player_init_counter = 0;//this is used in the priority queue to compare if next_turn is the same
+int distant_from_pc(PC* p, int x, int y);//this is used to make a 7x7 square field centered at pc where no monsters can be initialised
+int kill_player(player_node* p, player_node_heap* h);//this not only removes the player from the grid, it also frees the memory and removes the player from the priority queue
 
 /*the five grids are being saved so all the methods will have access to them*/
 char grid[xlenMax][ylenMax];
@@ -135,10 +136,9 @@ int main(int argc, char* argv[])
 	//int hardness[xlenMax][ylenMax];
 	int numRooms, numUpstairs, numDownstairs;
 	uint8_t xPCpos, yPCpos;
-
-
-
 	room *rooms;
+	
+
 
 	//first we populate the grid with spaces
 	for (i = 0; i < xlenMax; i++)
@@ -146,7 +146,6 @@ int main(int argc, char* argv[])
 		for (j = 0; j < ylenMax; j++)
 		{
 			grid[i][j] = ' ';
-			grid_players[i][j]=NULL;
 		}
 	}
 
@@ -302,6 +301,8 @@ int main(int argc, char* argv[])
 				}
 			}
 		}
+		
+		
 
 		fclose(f);
 		//printf("load found - final - no error while loading\n");
@@ -472,8 +473,6 @@ int main(int argc, char* argv[])
 	//printf("\nPC is at (y, x): %d, %d\n\n", yPCpos, xPCpos);
 	//below is where we print out the actual grid
 	print_dungeon();
-
-
 	//here we get the argument for the number of monsters
 	j = 0;
 	for (i = 1; i < argc; i++)
@@ -488,34 +487,47 @@ int main(int argc, char* argv[])
 	//processing for save tags beings here
 	if (j) j = atoi(argv[i+1]);
 	else j = 10;
+	
+	PC* pc = malloc(sizeof(PC));
 
-
-
+	printf("\n we got here \n");
+	//pc->x = xPCpos;
+	//pc->y = yPCpos;
 	printf("\n\n\n");
-	PC* pc;
-	initialize_pc(&pc);
+	//PC* pc;
+	initialize_pc(pc);
+	//grid_players[xPCpos][yPCpos] = PCnode;
 	printf("\nPC has been initialised; the coordinates accessible from main are %d, %d\n", pc->x, pc->y);
 	initialize_players(j, pc);
+	//printf("\nplayers initialised");
 	player_node_heap* h;
 	populate_heap(&h);
-
+	//printf("\nheap loaded\n");
 	// printf("\nLets see if the new djik works\n");
 	// djik(pc->x,pc->y,0);
 	// printf("\n\n");
 	// for (i = 0; i<ylenMax;i++) {for(j = 0; j<xlenMax; j++){ if (difficulty[j][i]==INT_MAX) printf("  "); else printf("%2d", difficulty[j][i]);} printf("\n");}
 	// printf("\n\n");
+ 
+	
+	
 
-	i = 0;
-	player_node* curr = NULL;
+	
+	print_dungeon();
+	
+	
+	player_node* curr;
+	player_node* curr2;
+	i = 0;	
 	while (!(i))
 	{
-		//print_dungeon(0, 0);
+		//print_dungeon();
 		//usleep(1000000);
 		pop_player(h, &i, &curr);
 		if (!(i))
 		{
 			next_move(curr, pc ,&i, h);
-			player_node* curr2= h->head;
+			curr2= h->head;
 
 			while(curr2!=NULL)
 			{
@@ -526,14 +538,38 @@ int main(int argc, char* argv[])
 		}
 
 	}
-	if (i==2)printf("\n\n\n\n\n\n\n\n\n\n\n\nPC LOST\n\n\n\n");
-	else if (i==3)printf("\n\n\n\n\n\n\n\n\n\n\n\nPC WON\n\n\n\n");
+	if (i==2) printf("\n\n\n\n\n\n\n\n\n\n\n\nPC LOST\n\n\n\n");
+	
+	else 
+	{
+		xPCpos = pc->x;
+		yPCpos = pc->y;
+		if (i==3)printf("\n\n\n\n\n\n\n\n\n\n\n\nPC WON\n\n\n\n");
+	}
 
-	printf("\nLets see if the heap actually works\n head-->");
+	//printf("\nLets see if the heap actually works\n head-->");
 
 
-	kill_all();
+	//kill_all();
+	//free(h);
+	//kill_all();
+	curr2= h->head;
+
+	while(curr2!=NULL)
+	{
+		curr = curr2;
+		curr2 = curr->next;
+		if(curr->ifPC){
+		free(curr->pc); curr->pc=NULL; free(curr);}
+		else {free(curr->npc);curr->npc=NULL; free(curr);}
+	}
+	h->head = NULL;
+	h->tail = NULL;
 	free(h);
+	
+
+
+
 
 
 	//Now we check to see if there's a save switch to update the /.rlg327/dungeon
@@ -1102,9 +1138,9 @@ int distant_from_pc(PC* p, int x, int y){
 	return 0;
 }
 
-int initialize_pc(PC** pc)
+int initialize_pc(PC* pc)
 {
-	(*pc) = malloc(sizeof(PC));
+	//(pc) = malloc(sizeof(PC));
 	int i, j, k;
 	i = 1;
 	while (i)
@@ -1117,16 +1153,16 @@ int initialize_pc(PC** pc)
 
 	}
 
-	(*pc)->x = k;
-	(*pc)->y = j;
+	(pc)->x = k;
+	(pc)->y = j;
 
-	(*pc)->speed = 10;
+	(pc)->speed = 10;
 
-
+	printf("first part successfully executed\n");
 	player_node* pn = malloc(sizeof(player_node));
 	pn->ifPC = 1;
 	pn->alive = 1;
-	pn->pc = (*pc);
+	pn->pc = (pc);
 	pn->next_turn = 0;
 	pn->when_initiated = player_init_counter++;
 	printf("\nx: %d y: %d\n", k,j);
@@ -1231,8 +1267,6 @@ int kill_all()
 int populate_heap(player_node_heap** h)
 {
 	(*h) = malloc(sizeof(player_node_heap));
-	(*h)->head = NULL;
-	(*h)->tail = NULL;
 	for (int i = 0; i < ylenMax; i++)
 	{
 		for (int j = 0; j < xlenMax; j++)
@@ -1244,12 +1278,12 @@ int populate_heap(player_node_heap** h)
 
 int push_player_node(player_node_heap* h, player_node* p)
 {
+	
+	//printf("adding PC: %d of turn: %d \n",p->ifPC, p->next_turn);
 	if (h->head==NULL)//nothing in the heap
 	{
 		h->head = p;
 		h->tail = p;
-		p->prev = NULL;
-		p->next = NULL;
 		return 0;
 	}
 	else
@@ -1257,7 +1291,6 @@ int push_player_node(player_node_heap* h, player_node* p)
 		h->tail->next = p;
 		p->prev = h->tail;
 		h->tail = p;
-		p->next = NULL;
 		return 0;
 	}
 
@@ -1315,14 +1348,11 @@ int kill_player(player_node* p, player_node_heap* h)
 	//player_node* previous =
 	if ((p->prev)!=NULL)
 	{
-		if (p->next==NULL) p->prev->next = NULL;
-		else p->prev->next = p->next;
+		p->prev->next = p->next;
 	}
 	else //this is a head
 	{
-		if (p->next==NULL)
-		h->head = NULL;
-		else h->head = p->next;
+		h->head = p->next;
 	}
 	if ((p->next)!=NULL)
 	{
@@ -1330,8 +1360,7 @@ int kill_player(player_node* p, player_node_heap* h)
 	}
 	else //this is tail
 	{
-		if (p->prev==NULL) h->tail =NULL;
-		else h->tail = p->prev;
+		h->tail = p->prev;
 	}
 
 	if (p->ifPC==1)
@@ -1373,7 +1402,6 @@ int next_move(player_node *pn, PC* pc, int* ifend, player_node_heap* h)
 				pn->pc->x = n->store[i][0];
 				pn->pc->y = n->store[i][1];
 				grid_players[n->store[i][0]][n->store[i][1]] = pn;
-				break;
 			}
 		}
 
@@ -1399,7 +1427,7 @@ int next_move(player_node *pn, PC* pc, int* ifend, player_node_heap* h)
 	int nextx=x;
 	int nexty=y;
 	int cost = INT_MAX;
-
+	
 	if (character & TELE)
 	{
 		pn->npc->ifPCseen = 1;
@@ -1444,7 +1472,7 @@ int next_move(player_node *pn, PC* pc, int* ifend, player_node_heap* h)
 				}
 			}
 		}
-
+		
 	}
 	else //dumb ones just move in a straight line towards pc location
 	{
@@ -1469,7 +1497,7 @@ int next_move(player_node *pn, PC* pc, int* ifend, player_node_heap* h)
 			//else do nothing
 		}
 	}
-
+	
 	if (character & ERAT)
 	{
 		if (rand()& 0x1)
@@ -1482,8 +1510,6 @@ int next_move(player_node *pn, PC* pc, int* ifend, player_node_heap* h)
 	}
 
 	printf("%d, %d\n",nextx, nexty);
-
-	//nextx and nexty will be the positions we will use to determine where the monster goes
 
 	if(grid_players[nextx][nexty]==NULL)//no players to kill
 	{
@@ -1517,7 +1543,7 @@ int next_move(player_node *pn, PC* pc, int* ifend, player_node_heap* h)
 			}
 		}
 	}
-	else if (nextx!=x || nexty!=y)//we kill someone
+	else//we kill someone
 	{
 		if (grid_players[nextx][nexty]->ifPC==1) *ifend = 2;
 		kill_player(grid_players[nextx][nexty], h);
@@ -1549,7 +1575,8 @@ int if_in_room(PC* pc)
 		for(int j = left; j <= right; j++)
 		{
 			if (grid_players[j][i]!=NULL){
-				if(!(grid_players[j][i]->ifPC==1)){
+				if(!(grid_players[j][i]->ifPC==1))
+				{
 					grid_players[j][i]->npc->ifPCseen = 1;
 					grid_players[j][i]->npc->PCx = pc->x;
 					grid_players[j][i]->npc->PCy = pc->y;
@@ -1558,4 +1585,27 @@ int if_in_room(PC* pc)
 		}
 	}
 
+}
+
+//tentative
+int initialize_pc_from_load(PC* pc)
+{
+
+	int j, k;
+
+
+	k = (pc)->x;
+	j = (pc)->y;
+
+	(pc)->speed = 10;
+
+	printf("first part successfully executed\n");
+	player_node* pn = malloc(sizeof(player_node));
+	pn->ifPC = 1;
+	pn->alive = 1;
+	pn->pc = (pc);
+	pn->next_turn = 0;
+	pn->when_initiated = player_init_counter++;
+	printf("\nx: %d y: %d\n", k,j);
+	grid_players[k][j] = pn;
 }
