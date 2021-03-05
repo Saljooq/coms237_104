@@ -47,19 +47,17 @@ typedef struct node_heap {
 	int size;
 } node_heap;
 /*neighbourhood - this contains an 8x2 array that contains all possible neighour's coordinates (x,y) and the size - num of neighours*/
-
-
 typedef struct neighbourhood{
 int store[8][2];
 int size;
 }neighbourhood;
-
+/*This struct will contain all the data we will need for pc*/
 typedef struct PC{
 int speed;
 int x;
 int y;
 }PC;
-
+/*ALL non-pc players data will be stored here*/
 typedef struct NPC{
 uint8_t character;
 int x;
@@ -69,7 +67,7 @@ int ifPCseen;
 int PCx;
 int PCy;
 }NPC;
-
+/*These nodes store all the players and their data needed to put them on the heap*/
 typedef struct player_node{
 int ifPC;
 PC* pc;
@@ -80,9 +78,8 @@ int alive;
 struct player_node* prev;
 struct player_node* next;
 
-
 }player_node;
-
+/*This merely contains the head and tail player_node of the heap. It is used to access all the players*/
 typedef struct player_node_heap {
 	player_node* head;
 	player_node* tail;
@@ -91,11 +88,11 @@ typedef struct player_node_heap {
 
 
 
-int populate_heap(player_node_heap** h);
-int push_player_node(player_node_heap* h, player_node* p);
-int kill_all();
-int initialize_pc(PC** p);
-int initialize_players(int n, PC* p);
+int populate_heap(player_node_heap** h);//This puts all the player_node in a heap
+int push_player_node(player_node_heap* h, player_node* p);//used to add players to heap
+int kill_all();//This is used to make sure all the players malloc'd get freed
+int initialize_pc(PC** p);//this is used to take a pc struct's pointer and create a node and place it in random spot.
+int initialize_players(int n, PC* p);//used to create all the npc's as per the specs.
 /*These are all the prototypes that we'll use later*/
 int getNeighbour(int x, int y, neighbourhood* n);
 int push(node_heap* nh, int x, int y);
@@ -112,10 +109,10 @@ int print_neighbour_movement(int PCposx, int PCposy, int hardness[xlenMax][ylenM
 
 int next_move(player_node *pn, PC* pc, int* ifend, player_node_heap* h);
 int pop_player(player_node_heap* nh, int* ifend, player_node** p);
-int if_in_room(PC* pc);
+int if_in_room(PC* pc);//updates all bots that share same room as pc
 
 uint8_t player_init_counter = 0;
-int distant_from_pc(PC* p, int x, int y);
+int distant_from_pc(PC* p, int x, int y);//creates a giant square centered at PC to make sure no bots are initialised too close
 
 /*the five grids are being saved so all the methods will have access to them*/
 char grid[xlenMax][ylenMax];
@@ -124,7 +121,7 @@ int difficulty[xlenMax][ylenMax];//this will be used to save data for distance o
 int difficulty_t[xlenMax][ylenMax];//this is to save data for tunnelers
 uint8_t shortPathRecord[xlenMax][ylenMax];//this keeps record of what is on the queue and what isn't for djik* algo
 
-player_node *grid_players[xlenMax][ylenMax];
+player_node *grid_players[xlenMax][ylenMax];//this will be used to store pointers of all the player nodes
 
 int main(int argc, char* argv[])
 {
@@ -467,11 +464,11 @@ int main(int argc, char* argv[])
 	}
 	//this is where processing of the dungeon ends
 
-	/*the method below will help produce the desired result for 1.03*/
+	/*the method below will help produce the desired result for 1.04*/
 
 	//printf("\nPC is at (y, x): %d, %d\n\n", yPCpos, xPCpos);
 	//below is where we print out the actual grid
-	print_dungeon();
+	//print_dungeon();
 
 
 	//here we get the argument for the number of monsters
@@ -485,51 +482,49 @@ int main(int argc, char* argv[])
 			}
 
 	}
-	//processing for save tags beings here
+
 	if (j) j = atoi(argv[i+1]);
 	else j = 10;
-
+	//processing for nummon tags beings here
 
 
 	printf("\n\n\n");
 	PC* pc;
-	initialize_pc(&pc);
-	printf("\nPC has been initialised; the coordinates accessible from main are %d, %d\n", pc->x, pc->y);
-	initialize_players(j, pc);
+	initialize_pc(&pc);//this is where pc gets initialised
+	//printf("\nPC has been initialised; the coordinates accessible from main are %d, %d\n", pc->x, pc->y);
+	initialize_players(j, pc);//this initialises all the bots
 	player_node_heap* h;
-	populate_heap(&h);
+	populate_heap(&h);//all monsters and pc get loaded on a heap
 
-	// printf("\nLets see if the new djik works\n");
-	// djik(pc->x,pc->y,0);
-	// printf("\n\n");
-	// for (i = 0; i<ylenMax;i++) {for(j = 0; j<xlenMax; j++){ if (difficulty[j][i]==INT_MAX) printf("  "); else printf("%2d", difficulty[j][i]);} printf("\n");}
-	// printf("\n\n");
+
 
 	i = 0;
 	player_node* curr = NULL;
 	while (!(i))
 	{
-		//print_dungeon(0, 0);
-		//usleep(1000000);
-		pop_player(h, &i, &curr);
-		if (!(i))
+		pop_player(h, &i, &curr);//this is where a node 'curr' gets selected to make next move
+		if (!(i))//if its not the case that theres only one player left, then game goes on or else pc wins
 		{
-			next_move(curr, pc ,&i, h);
-			player_node* curr2= h->head;
+			next_move(curr, pc ,&i, h);//move prints and adds a 0.25s sleep as well
 
-			while(curr2!=NULL)
-			{
-				printf("%d-%d->",curr2->next_turn, curr2->ifPC);
-				curr2 = curr2->next;
-			}
-			printf("\n");
+
+			/*Below the whole heap can be made visible for debugging*/
+			// while(curr2!=NULL)
+			// player_node* curr2= h->head;
+			// {
+			// 	printf("%d-%d->",curr2->next_turn, curr2->ifPC);
+			// 	curr2 = curr2->next;
+			// }
+			// printf("\n");
 		}
 
 	}
-	if (i==2)printf("\n\n\n\n\n\n\n\n\n\n\n\nPC LOST\n\n\n\n");
-	else if (i==3)printf("\n\n\n\n\n\n\n\n\n\n\n\nPC WON\n\n\n\n");
+	if (i==2){
+		print_dungeon();
+		printf("\n\n\n\n\n\n\n\n\n\n\n\nPC LOST\n\n\n\n\n\n\n\n");
+	}
+	else if (i==3)printf("\n\n\n\n\n\n\n\n\n\n\n\nPC WON\n\n\n\n\n\n\n\n");
 
-	printf("\nLets see if the heap actually works\n head-->");
 
 
 	kill_all();
@@ -1057,6 +1052,7 @@ int print_hardness()
 
 	return 0;
 }
+/*This method prints the difficulty in crossing the 'current' cell*/
 int print_neighbour_movement(int PCposx, int PCposy, int hardness[xlenMax][ylenMax])
 {
 	int i,j;
@@ -1090,7 +1086,7 @@ int print_neighbour_movement(int PCposx, int PCposy, int hardness[xlenMax][ylenM
 
 	return 0;
 }
-
+/*This method is used to make sure that monsters initialise away from PC and creates a 9x9 square centered at the pc where no npc can intialise*/
 int distant_from_pc(PC* p, int x, int y){
 	int PCx,PCy;
 	//printf("we're in distant method");
@@ -1101,7 +1097,7 @@ int distant_from_pc(PC* p, int x, int y){
 	if ((y > (PCy+4))||(y < (PCy-4))) return 1;
 	return 0;
 }
-
+/*this is used to take a pc struct's pointer and create a node and place it in random spot.*/
 int initialize_pc(PC** pc)
 {
 	(*pc) = malloc(sizeof(PC));
@@ -1129,25 +1125,14 @@ int initialize_pc(PC** pc)
 	pn->pc = (*pc);
 	pn->next_turn = 0;
 	pn->when_initiated = player_init_counter++;
-	printf("\nx: %d y: %d\n", k,j);
+	//printf("\nx: %d y: %d\n", k,j);
 	grid_players[k][j] = pn;
 }
-
+/* This is used to create all the npc's as per the specs. There is a distance of atleast 4 from PC*/
 int initialize_players(int n, PC* p)
 {
 	int i, j, k , t;
 
-	//we're assuming PC initialisation happens before other grid_players
-	// PC* p;
-	// for (i = 0; i < ylenMax; i++)
-	// {
-	// 	for (j = 0; j < xlenMax; j++)
-	// 	{
-	// 		if (grid_players[j][i]!=NULL){
-	// 			if (grid_players[j][i]->ifPC) p=grid_players[j][i]->pc;
-	// 		}
-	// 	}
-	// }
 
 	for (t = 0; t < n; t++)
 	{
@@ -1178,8 +1163,8 @@ int initialize_players(int n, PC* p)
 
 		//printf("x is %d and y is %d\n", k,j);
 
-		npc->character = rand()&0xf;
-		npc->speed = 5+ (rand()&0xf);
+		npc->character = rand()&0xf;//any character netween 0-15
+		npc->speed = 5+ (rand()&0xf);//speed randomly gets selected from 5-20
 		npc-> ifPCseen = 0;
 
 
@@ -1189,13 +1174,14 @@ int initialize_players(int n, PC* p)
 		pn->npc = npc;
 		pn->next_turn = 0;
 		pn->when_initiated = player_init_counter++;
-		printf("x: %d y: %d\n", k,j);
+		//printf("x: %d y: %d\n", k,j);
 		grid_players[k][j] = pn;
 
 	}
 
 
 }
+/*This is a clean-up mechanism that makes sure all remaining players(malloc'd) are freed.*/
 int kill_all()
 {
 	int i, j;
@@ -1227,7 +1213,7 @@ int kill_all()
 
 }
 
-
+/*populates our heap with all the players in the grid_players using the player_push method*/
 int populate_heap(player_node_heap** h)
 {
 	(*h) = malloc(sizeof(player_node_heap));
@@ -1241,7 +1227,7 @@ int populate_heap(player_node_heap** h)
 		}
 	}
 }
-
+/*This is used to push all the new nodes into the heap*/
 int push_player_node(player_node_heap* h, player_node* p)
 {
 	if (h->head==NULL)//nothing in the heap
@@ -1263,9 +1249,7 @@ int push_player_node(player_node_heap* h, player_node* p)
 
 }
 
-
-
-
+/*This is used to select a node in the heap based on the specs (lowest -> next_turn, when_initiated) */
 int pop_player(player_node_heap* nh, int* ifend, player_node** output)
 {
 	player_node* p = nh->head;
@@ -1308,8 +1292,7 @@ int pop_player(player_node_heap* nh, int* ifend, player_node** output)
 
 }
 
-
-
+/*This is used to kill a player, remove it from the heap and free the malloc'd node*/
 int kill_player(player_node* p, player_node_heap* h)
 {
 	//player_node* previous =
@@ -1352,13 +1335,19 @@ int kill_player(player_node* p, player_node_heap* h)
 	}
 }
 
-
+/*This is used to figure out what to do with the node selected with pop_player. nextx, and nexty are set to current location of the bot and will determine where it moves next.
+This method first checks if bot is tele or not. If it is tele then ifPCseen gets updated to 1, and PCx and PCy get updated to current PC location.
+If not tele, then if_in_room updates to see if tele can see the PC.
+Then we check to see if bot it intelligent. If intelligent and if PC is seen- then we will use djik algo (based on PCx and PCy and if digger or not) then update nextx and nexty.
+If not intelligent, then if PC is seen, then bot moves the nextx, and nexty, horizontally and then vertically towards the location known to the bot.
+If the bot is erratic, then we check random, and there's a 50 percent chance neigbouring cell will be used for nextx or nexty, other 50percent chance, next coordinates remain unchanged.
+Then the nextx and nexty is processed - as per the specs. First we check if there's a bot sitting on the next coordinates. If there is (and it isn't the current one) then we kill it and remove it from the heap and the grid_players. If there is no bot- action will depend on whether it can tunnel and what the hardness is.*/
 int next_move(player_node *pn, PC* pc, int* ifend, player_node_heap* h)
 {
 
 
 	if (pn->ifPC==1) {
-		printf("\nPC's turn, score of %d \n", pn->next_turn);
+		//printf("\nPC's turn, score of %d \n", pn->next_turn);
 
 		neighbourhood* n;
 		n = malloc(sizeof(neighbourhood));
@@ -1382,12 +1371,12 @@ int next_move(player_node *pn, PC* pc, int* ifend, player_node_heap* h)
 		usleep(250000);
 		print_dungeon();
 		free(n);
-		printf("\n\n");
+		printf("\n\n\n");
 		return 0;
 
 	}
 
-	printf("\nNPC with a score of %d at x,y: %d,%d named %x, being moved to  ",pn->next_turn, pn->npc->x,pn->npc->y,pn->npc->character);
+	//printf("\nNPC with a score of %d at x,y: %d,%d named %x, being moved to  ",pn->next_turn, pn->npc->x,pn->npc->y,pn->npc->character);
 	//now we've established that the node is not of PC
 	int character = pn->npc->character;
 	int x = pn->npc->x;
@@ -1481,7 +1470,7 @@ int next_move(player_node *pn, PC* pc, int* ifend, player_node_heap* h)
 		}
 	}
 
-	printf("%d, %d\n",nextx, nexty);
+	//printf("%d, %d\n",nextx, nexty);
 
 	//nextx and nexty will be the positions we will use to determine where the monster goes
 
@@ -1532,7 +1521,7 @@ int next_move(player_node *pn, PC* pc, int* ifend, player_node_heap* h)
 	free (n);
 	return 0;
 }
-
+/*This methods identifies all the non-npc players in the room shared by PC, and updated the ifPCseen to PC's current location PCx and PCy for npc*/
 int if_in_room(PC* pc)
 {
 	int upper = pc->y;
